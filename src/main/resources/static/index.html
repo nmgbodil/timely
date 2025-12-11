@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Timely Todos</title>
+	<style>
+		:root {
+			font-family: "Segoe UI", sans-serif;
+			color: #1f2933;
+			background: #f6f8fb;
+		}
+		body {
+			margin: 0;
+			padding: 32px;
+			display: flex;
+			justify-content: center;
+		}
+		main {
+			background: #fff;
+			border-radius: 14px;
+			box-shadow: 0 10px 40px rgba(12, 55, 82, 0.08);
+			padding: 28px;
+			max-width: 720px;
+			width: 100%;
+		}
+		h1 {
+			margin-top: 0;
+			font-size: 26px;
+		}
+		form {
+			display: grid;
+			grid-template-columns: 1fr;
+			gap: 12px;
+		}
+		input, textarea, button {
+			font: inherit;
+		}
+		input[type="text"], textarea {
+			border: 1px solid #d6dde5;
+			border-radius: 10px;
+			padding: 12px;
+			width: 100%;
+			box-sizing: border-box;
+		}
+		button {
+			border: none;
+			background: linear-gradient(135deg, #2563eb, #1d4ed8);
+			color: white;
+			padding: 12px 16px;
+			border-radius: 10px;
+			cursor: pointer;
+			box-shadow: 0 6px 20px rgba(37, 99, 235, 0.25);
+		}
+		button:disabled {
+			opacity: 0.5;
+			cursor: not-allowed;
+			box-shadow: none;
+		}
+		.todo-list {
+			list-style: none;
+			padding: 0;
+			margin: 24px 0 0 0;
+		}
+		.todo-item {
+			display: grid;
+			grid-template-columns: auto 1fr auto;
+			align-items: center;
+			gap: 12px;
+			padding: 12px;
+			border: 1px solid #e3e9f0;
+			border-radius: 12px;
+			margin-bottom: 12px;
+			background: #fcfdff;
+		}
+		.todo-item.completed {
+			border-color: #cfe6d7;
+			background: #f3fbf5;
+		}
+		.todo-title {
+			margin: 0;
+			font-weight: 600;
+		}
+		.todo-desc {
+			margin: 4px 0 0;
+			color: #52606d;
+			font-size: 14px;
+		}
+		.meta {
+			color: #73808c;
+			font-size: 12px;
+		}
+		.actions {
+			display: flex;
+			gap: 8px;
+		}
+		.actions button {
+			background: #f0f4f8;
+			color: #243b53;
+			box-shadow: none;
+			padding: 8px 12px;
+		}
+		.actions button.delete {
+			background: #fee2e2;
+			color: #b91c1c;
+		}
+		.status {
+			margin-top: 10px;
+			color: #0b6fea;
+			font-weight: 600;
+		}
+	</style>
+</head>
+<body>
+<main>
+	<h1>Timely Todo List</h1>
+	<form id="create-form">
+		<input type="text" id="title" name="title" placeholder="What needs to get done?" required maxlength="255">
+		<textarea id="description" name="description" placeholder="Add a bit more detail (optional)" rows="3" maxlength="2000"></textarea>
+		<button type="submit" id="submit-btn">Add Todo</button>
+	</form>
+	<div id="status" class="status" aria-live="polite"></div>
+	<ul id="todo-list" class="todo-list"></ul>
+</main>
+<script>
+	const api = "/api/todos";
+	const listEl = document.getElementById("todo-list");
+	const statusEl = document.getElementById("status");
+
+	async function fetchTodos() {
+		const res = await fetch(api);
+		if (!res.ok) {
+			statusEl.textContent = "Could not load todos.";
+			return;
+		}
+		const data = await res.json();
+		renderTodos(data);
+	}
+
+	function renderTodos(todos) {
+		listEl.innerHTML = "";
+		if (!todos.length) {
+			listEl.innerHTML = "<li class=\"meta\">No todos yet. Add one above!</li>";
+			return;
+		}
+
+		todos.forEach(todo => {
+			const li = document.createElement("li");
+			li.className = "todo-item" + (todo.completed ? " completed" : "");
+
+			const checkbox = document.createElement("input");
+			checkbox.type = "checkbox";
+			checkbox.checked = todo.completed;
+			checkbox.addEventListener("change", () => updateCompletion(todo.id, checkbox.checked));
+
+			const content = document.createElement("div");
+			const title = document.createElement("p");
+			title.className = "todo-title";
+			title.textContent = todo.title;
+			const desc = document.createElement("p");
+			desc.className = "todo-desc";
+			desc.textContent = todo.description || "No description provided.";
+			const meta = document.createElement("div");
+			meta.className = "meta";
+			meta.textContent = `Created ${new Date(todo.createdAt).toLocaleString()}`;
+			content.append(title, desc, meta);
+
+			const actions = document.createElement("div");
+			actions.className = "actions";
+
+			const deleteBtn = document.createElement("button");
+			deleteBtn.textContent = "Delete";
+			deleteBtn.className = "delete";
+			deleteBtn.addEventListener("click", () => deleteTodo(todo.id));
+			actions.append(deleteBtn);
+
+			li.append(checkbox, content, actions);
+			listEl.append(li);
+		});
+	}
+
+	async function createTodo(payload) {
+		const res = await fetch(api, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload)
+		});
+		if (res.ok) {
+			statusEl.textContent = "Todo added.";
+			await fetchTodos();
+		} else {
+			const err = await res.json().catch(() => ({}));
+			statusEl.textContent = err.message || "Could not create todo.";
+		}
+	}
+
+	async function updateCompletion(id, completed) {
+		const res = await fetch(`${api}/${id}/completion`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ completed })
+		});
+		if (!res.ok) {
+			statusEl.textContent = "Could not update todo.";
+		} else {
+			statusEl.textContent = completed ? "Marked complete." : "Marked incomplete.";
+			await fetchTodos();
+		}
+	}
+
+	async function deleteTodo(id) {
+		const res = await fetch(`${api}/${id}`, { method: "DELETE" });
+		if (res.ok) {
+			statusEl.textContent = "Todo removed.";
+			await fetchTodos();
+		} else {
+			statusEl.textContent = "Could not delete todo.";
+		}
+	}
+
+	document.getElementById("create-form").addEventListener("submit", async (e) => {
+		e.preventDefault();
+		const title = document.getElementById("title").value.trim();
+		const description = document.getElementById("description").value.trim();
+		if (!title) {
+			statusEl.textContent = "Please add a title.";
+			return;
+		}
+		document.getElementById("submit-btn").disabled = true;
+		await createTodo({ title, description, completed: false });
+		document.getElementById("submit-btn").disabled = false;
+		e.target.reset();
+	});
+
+	fetchTodos();
+</script>
+</body>
+</html>
